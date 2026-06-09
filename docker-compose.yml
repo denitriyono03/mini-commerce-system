@@ -1,0 +1,125 @@
+services:
+  # ==========================================
+  # INFRASTRUCTURE LAYER
+  # ==========================================
+  postgres:
+    image: postgres:15-alpine
+    container_name: assessment-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: password123
+      POSTGRES_DB: order_processing_db
+    ports:
+      - "5432:5432"
+    networks:
+      - tech-net
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    container_name: assessment-redis
+    restart: always
+    ports:
+      - "6379:6379"
+    networks:
+      - tech-net
+    volumes:
+      - redis-data:/data
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.10.4
+    container_name: assessment-elastic
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+    ports:
+      - "9200:9200"
+    networks:
+      - tech-net
+    volumes:
+      - es-data:/usr/share/elasticsearch/data
+
+  kafka:
+    image: apache/kafka:4.3.0
+    container_name: assessment-kafka
+    user: "root"
+    restart: always
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT_INTERNAL://0.0.0.0:29092,CONTROLLER://0.0.0.0:9093,PLAINTEXT://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT_INTERNAL://assessment-kafka:29092,PLAINTEXT://localhost:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT_INTERNAL:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@assessment-kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_JVM_PERFORMANCE_OPTS: "-Xmx256m -Xms256m"
+    networks:
+      - tech-net
+    volumes:
+      - kafka-data:/tmp/kafka-logs
+
+  # ==========================================
+  # APPLICATION LAYER
+  # ==========================================
+  catalog-service:
+    build:
+      context: ./catalog-service
+      dockerfile: Dockerfile
+    container_name: catalog-service
+    ports:
+      - "8081:8081"
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://assessment-postgres:5432/order_processing_db
+      - SPRING_DATASOURCE_USERNAME=admin
+      - SPRING_DATASOURCE_PASSWORD=password123
+      - SPRING_DATA_REDIS_HOST=assessment-redis
+      - SPRING_DATA_REDIS_PORT=6379
+      - SPRING_ELASTICSEARCH_URIS=http://assessment-elastic:9200
+      - SPRING_KAFKA_BOOTSTRAP_SERVERS=assessment-kafka:29092
+    depends_on:
+      postgres:
+        condition: service_started
+      redis:
+        condition: service_started
+      elasticsearch:
+        condition: service_started
+      kafka:
+        condition: service_started
+    networks:
+      - tech-net
+
+  order-service:
+    build:
+      context: ./order-service
+      dockerfile: Dockerfile
+    container_name: order-service
+    ports:
+      - "8082:8082"
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://assessment-postgres:5432/order_processing_db
+      - SPRING_DATASOURCE_USERNAME=admin
+      - SPRING_DATASOURCE_PASSWORD=password123
+      - SPRING_KAFKA_BOOTSTRAP_SERVERS=assessment-kafka:29092
+    depends_on:
+      - postgres
+      - kafka
+    networks:
+      - tech-net
+
+networks:
+  tech-net:
+    driver: bridge
+
+volumes:
+  pg-data:
+  redis-data:
+  es-data:
+  kafka-data:
