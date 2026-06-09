@@ -65,7 +65,7 @@ Pastikan environment Anda telah memiliki:
 ## 1. Clone Repository
 
 ```bash
-git clone https://gitlab.com/ryukirigami/mini-commerce-system
+git clone https://github.com/denitriyono03/mini-commerce-system
 cd mini-commerce-system
 ```
 
